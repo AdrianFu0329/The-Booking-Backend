@@ -24,18 +24,80 @@ app.get("/webhook", (req, res) => {
 });
 
 // 2. Webhook receiver (messages come here)
-app.post("/webhook", (req, res) => {
+app.post("/webhook", async (req, res) => {
   console.log("Incoming webhook:", JSON.stringify(req.body, null, 2));
 
   const entry = req.body.entry?.[0];
   const changes = entry?.changes?.[0];
+
   const messages = changes?.value?.messages;
+  const contacts = value?.contacts;
 
   if (messages) {
     const msg = messages[0];
     const from = msg.from; // customer’s number
     const text = msg.text?.body; // message text
-    console.log(`Received message from ${from}: ${text}`);
+    const name = contacts.profile?.name; // customer name
+
+    console.log(`Received message from ${name} ${from}: ${text}`);
+
+    try {
+      const customersTableBody = {
+        name: name,
+        phone: from,
+        email: "N/A",
+      }
+
+      // 1. Upsert customer into "customers"
+      const customerRes = await fetch(`${process.env.SUPABASE_URL}/rest/v1/customers`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: process.env.SUPABASE_KEY,
+          Authorization: `Bearer ${process.env.SUPABASE_KEY}`, 
+          Prefer: "return=representation",
+        },
+        body: JSON.stringify(customersTableBody),
+      });
+
+      if (!customerRes.ok) {
+        const errorText = await customerRes.text();
+        console.error("Failed to insert customer:", errorText);
+        return res.sendStatus(500);
+      }
+
+      const customerData = await customerRes.json();
+      const customerId = customerData[0]?.id; // returned uuid
+
+      const chatLogsTableBody = {
+        restaurantId: process.env.RESTAURANT_ID,
+        customerId: customerId,
+        message: text,
+        sender: 'customer',
+      }
+
+      // 2. Insert chat log linked to customer
+      const chatLogRes = await fetch(`${process.env.SUPABASE_URL}/rest/v1/chat_logs`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: process.env.SUPABASE_KEY,
+          Authorization: `Bearer ${process.env.SUPABASE_KEY}`, 
+          Prefer: "return=representation",
+        },
+        body: JSON.stringify(chatLogsTableBody),
+      });
+
+      if (!chatLogRes.ok) {
+        const errorText = await chatLogRes.text();
+        console.error("Failed to insert chat log:", errorText);
+        return res.sendStatus(500);
+      }
+
+      console.log("Saved chat log successfully!");
+    } catch (error) {
+      console.error("Error saving webhook data:", error.message);
+    }
   }
 
   res.sendStatus(200);
