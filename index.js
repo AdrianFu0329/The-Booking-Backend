@@ -31,70 +31,96 @@ app.post("/webhook", async (req, res) => {
   const changes = entry?.changes?.[0];
 
   const messages = changes?.value?.messages;
-  const contacts = value?.contacts;
+  const contacts = changes?.value?.contacts;
 
   if (messages) {
     const msg = messages[0];
     const from = msg.from; // customer’s number
     const text = msg.text?.body; // message text
-    const name = contacts.profile?.name; // customer name
+    const name = contacts?.[0]?.profile?.name; // customer's WhatsApp account Name
 
     console.log(`Received message from ${name} ${from}: ${text}`);
 
     try {
-      const customersTableBody = {
-        name: name,
-        phone: from,
-        email: "N/A",
-      }
-
-      // 1. Upsert customer into "customers"
-      const customerRes = await fetch(`${process.env.SUPABASE_URL}/rest/v1/customers`, {
-        method: "POST",
+      const rsp = await fetch(`${process.env.SUPABASE_URL}/rest/v1/customers`, {
         headers: {
-          "Content-Type": "application/json",
-          apikey: process.env.SUPABASE_KEY,
-          Authorization: `Bearer ${process.env.SUPABASE_KEY}`, 
-          Prefer: "return=representation",
+          apikey: process.env.SUPABASE_SERVICE_ROLE_KEY,
+            Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
         },
-        body: JSON.stringify(customersTableBody),
       });
 
-      if (!customerRes.ok) {
-        const errorText = await customerRes.text();
-        console.error("Failed to insert customer:", errorText);
-        return res.sendStatus(500);
+      if (!rsp.ok) {
+        console.error(LOG_TAG + "getCustomers :: Failed to get customers: " + rsp.status);
+        rspModel.setIsReqSuccessful(false);
+      } else {
+        const customersData = await rsp.json();
+
+        let isExistingCustomer = false;
+        let customerId = '';
+
+        customersData.forEach(customer => {
+          if (customer.phone === from) {
+            isExistingCustomer = true;
+            customerId = customer.id;
+          }
+        });
+
+        if (!isExistingCustomer) {
+          const customersTableBody = {
+            name: name,
+            phone: from,
+            email: "N/A",
+          }
+    
+          // 1. Upsert customer into "customers"
+          const customerRes = await fetch(`${process.env.SUPABASE_URL}/rest/v1/customers`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              apikey: process.env.SUPABASE_SERVICE_ROLE_KEY,
+              Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`, 
+              Prefer: "return=representation",
+            },
+            body: JSON.stringify(customersTableBody),
+          });
+    
+          if (!customerRes.ok) {
+            const errorText = await customerRes.text();
+            console.error("Failed to insert customer:", errorText);
+            return res.sendStatus(500);
+          }
+    
+          const customerData = await customerRes.json();
+          customerId = customerData[0]?.id; // returned uuid
+        }
+  
+        const chatLogsTableBody = {
+          restaurant_id: process.env.RESTAURANT_ID,
+          customer_id: customerId,
+          message: text,
+          sender: 'customer',
+        }
+  
+        // 2. Insert chat log linked to customer
+        const chatLogRes = await fetch(`${process.env.SUPABASE_URL}/rest/v1/chat_logs`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            apikey: process.env.SUPABASE_SERVICE_ROLE_KEY,
+            Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`, 
+            Prefer: "return=representation",
+          },
+          body: JSON.stringify(chatLogsTableBody),
+        });
+  
+        if (!chatLogRes.ok) {
+          const errorText = await chatLogRes.text();
+          console.error("Failed to insert chat log:", errorText);
+          return res.sendStatus(500);
+        }
+  
+        console.log("Saved chat log successfully!");
       }
-
-      const customerData = await customerRes.json();
-      const customerId = customerData[0]?.id; // returned uuid
-
-      const chatLogsTableBody = {
-        restaurantId: process.env.RESTAURANT_ID,
-        customerId: customerId,
-        message: text,
-        sender: 'customer',
-      }
-
-      // 2. Insert chat log linked to customer
-      const chatLogRes = await fetch(`${process.env.SUPABASE_URL}/rest/v1/chat_logs`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          apikey: process.env.SUPABASE_KEY,
-          Authorization: `Bearer ${process.env.SUPABASE_KEY}`, 
-          Prefer: "return=representation",
-        },
-        body: JSON.stringify(chatLogsTableBody),
-      });
-
-      if (!chatLogRes.ok) {
-        const errorText = await chatLogRes.text();
-        console.error("Failed to insert chat log:", errorText);
-        return res.sendStatus(500);
-      }
-
-      console.log("Saved chat log successfully!");
     } catch (error) {
       console.error("Error saving webhook data:", error.message);
     }
