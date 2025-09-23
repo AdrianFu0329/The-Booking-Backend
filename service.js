@@ -370,22 +370,26 @@ export default function Service() {
                     && booking.endDateTime !== null
                     && booking.type !== null
                 ) {
-                    const addBookingReq = {
-                        booking: booking,
-                    }
+                  booking.bookingStatus = "confirmed";
 
-                    const addBookingRsp = await doAddBooking(addBookingReq);
+                  const addBookingReq = {
+                      booking: booking,
+                  }
 
-                    if (!addBookingRsp.isReqSuccessful) {
-                      console.error("doOnlineAIRequest :: Booking not added successfully to DB.");
-                      return { isReqSuccessful: false };
-                    } else {
-                      return rspModel;
-                    }
+                  const addBookingRsp = await doAddBooking(addBookingReq);
+
+                  if (!addBookingRsp.isReqSuccessful) {
+                    console.error("doOnlineAIRequest :: Booking not added successfully to DB.");
+                    return { isReqSuccessful: false };
+                  } else {
+                    return rspModel;
+                  }
                 } else if (
                   parsedTxt.action === "confirm_update_booking" 
                   && parsedTxt.booking_id !== null
                 ) {
+                  booking.bookingStatus = "confirmed";
+                  
                   const updateBookingReq = {
                     restaurant_id: process.env.RESTAURANT_ID,
                     booking: booking,
