@@ -236,8 +236,11 @@ export default function Service() {
             General Instructions: 
             1. Use their name in your responses naturally.  
             2. Convert all times to Malaysian time from UTC.
-            3. Don't mention anything technical to the customer (date formats, timezones).
+            3. Don't mention anything technical to the customer (date formats, timezones, IDs).
             4. Keep messages short and concise.
+            5. Return null for date and time fields as a default value if none is provided by the customer.
+            6. If the customer asks to list down their bookings, just list down the start and end date and time, the pax, and notes of their bookings, omit other details.
+            7. Never reveal any IDs to the customer.
 
             Booking Placement Instructions:
             1. Assign a table_id from Restaurant Tables that:
@@ -254,13 +257,18 @@ export default function Service() {
             
             Booking Update Instructions: 
             1. Only fill up the booking_id field when the user confirms the booking details update.
-            2. Once the customer confirms the updated booking details, set the action to "confirm_update_booking" and return the updated booking details.
+            2. Once the customer confirms the updated booking details, set the action to "confirm_update_booking" and please remember to return all the updated booking details.
             3. If the provided start date and time clashes with other bookings from other customers, kindly recommend another time.
             4. If the provided pax or capacity clashes with other tables from other customers' bookings, kindly recommend another table from the list.
+            5. Always return a valid table_id whether its from the customer's existing reservation or from the new table chosen for them.
 
             Booking Cancel Instructions: 
             1. Only fill up the booking_id field when the user confirms the booking cancellation, otherwise return a null value for that field.
-            2. Once the customer confirms the action to cancel their booking, set the action to "cancel_update_booking" and return the cancelled booking_id.
+            2. Once the customer confirms the action to cancel their booking, set the action to "cancel_update_booking" and please remember to return the updated booking details.
+            3. Never ask the customer for booking ID
+            4. If the customer doesn't really specify which reservation to cancel. List it all out for them.
+            5. Always return a valid table_id from the customer's existing reservation.
+
 
             Conversation:
             "${reqModel.prompt}"
@@ -339,13 +347,28 @@ export default function Service() {
 
                 const parsedTxt = JSON.parse(rspTxt);
                 console.log("API Rsp: " + rspTxt);
+
+                let parsedStartDtTime = '';
+                let parsedEndDtTime = '';
+
+                try {
+                  if (parsedTxt.start_date && parsedTxt.start_time) {
+                    parsedStartDtTime = parseDateAndTime(parsedTxt.start_date, parsedTxt.start_time).toISOString();
+                  }
+
+                  if (parsedTxt.end_date && parsedTxt.end_time) {
+                    parsedEndDtTime = parseDateAndTime(parsedTxt.end_date, parsedTxt.end_time).toISOString();
+                  }
+                } catch (error) {
+                  // Do Nothing
+                }
         
                 const booking = {
                   id: parsedTxt.booking_id ?? null,
                   customerId: reqModel.customerId,
                   customerNm: parsedTxt.name ?? null,
-                  startDateTime: (parsedTxt.start_date && parsedTxt.start_time) ? parseDateAndTime(parsedTxt.start_date, parsedTxt.start_time).toISOString() ?? null : null,
-                  endDateTime: (parsedTxt.end_date && parsedTxt.end_time) ? parseDateAndTime(parsedTxt.end_date, parsedTxt.end_time).toISOString() ?? null : null,
+                  startDateTime: parsedStartDtTime,
+                  endDateTime: parsedEndDtTime,
                   pax: parsedTxt.num_guests ?? null,
                   notes: parsedTxt.special_requests ?? null,
                   title: `${process.env.SERVICE_TYPE} Reservation for ${parsedTxt.num_guests} Pax`,
@@ -389,7 +412,7 @@ export default function Service() {
                   && parsedTxt.booking_id !== null
                 ) {
                   booking.bookingStatus = "confirmed";
-                  
+
                   const updateBookingReq = {
                     restaurant_id: process.env.RESTAURANT_ID,
                     booking: booking,
@@ -403,7 +426,28 @@ export default function Service() {
                   } else {
                     return rspModel;
                   }
+                } else if (
+                  parsedTxt.action === "confirm_cancel_booking" 
+                  && parsedTxt.booking_id !== null
+                ) {
+                  const updatedBookingStatus = {
+                    id: parsedTxt.booking_id,
+                    bookingStatus: "cancelled"
+                  }
 
+                  const updateBookingReq = {
+                    restaurant_id: process.env.RESTAURANT_ID,
+                    booking: updatedBookingStatus,
+                  }
+
+                  const updateBookingRsp = await doUpdateCustomerBooking(updateBookingReq);
+
+                  if (!updateBookingRsp.isReqSuccessful) {
+                    console.error("doOnlineAIRequest :: Booking not updated successfully to DB.");
+                    return { isReqSuccessful: false };
+                  } else {
+                    return rspModel;
+                  }
                 } else {
                     return rspModel;
                 }
@@ -625,17 +669,20 @@ export default function Service() {
 
     const doUpdateCustomerBooking = async (reqModel) => {
         try {
-            const jsonItem = {
+          const startDateTime = (reqModel.booking.startDateTime) ? new Date(reqModel.booking.startDateTime).toISOString() : null; 
+          const endDateTime = (reqModel.booking.endDateTime) ? new Date(reqModel.booking.endDateTime).toISOString() : null; 
+
+          const jsonItem = {
               restaurant_id: reqModel.restaurant_id,
               customer_id: reqModel.booking.customer_id,
               table_id: reqModel.booking.bookingUnit,
               title: reqModel.booking.title,
               type: reqModel.booking.type,
               pax: reqModel.booking.pax,
-              status: "confirmed",
+              status: reqModel.booking.bookingStatus,
               notes: reqModel.booking.notes,
-              start_date_time: new Date(reqModel.booking.startDateTime).toISOString(),
-              end_date_time: new Date(reqModel.booking.endDateTime).toISOString(),
+              start_date_time: startDateTime,
+              end_date_time: endDateTime,
             }
 
             const rsp = await fetch(ServiceType.ServiceTypeUpdateCustomerBooking(reqModel.booking.id), {

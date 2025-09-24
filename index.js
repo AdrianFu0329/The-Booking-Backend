@@ -102,7 +102,7 @@ app.post("/webhook", async (req, res) => {
   
             if (!saveChatStatus) {
               console.error("Failed to save msg to DB: " + saveChatError);
-              res.sendStatus(802);
+              // res.sendStatus(802);
               return;
             } else {
               await axios.post(
@@ -123,7 +123,7 @@ app.post("/webhook", async (req, res) => {
               console.log("AI response sent to customer:", aiMsg);
   
               if (!aiRsp.isReqSuccessful) {
-                res.sendStatus(801);
+                // res.sendStatus(801);
               } else {
                 res.sendStatus(200);
               }
