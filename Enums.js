@@ -23,6 +23,8 @@ const ServiceType = {
     "ServiceTypeCheckForExistingWhatsAppMsgId": (restaurantId, customerId, msgId) => `${supabaseUrl}/rest/v1/chat_logs?restaurant_id=eq.${restaurantId}&customer_id=eq.${customerId}&whatsapp_msg_id=eq.${msgId}&select=*, customers!customer_id(*)`,
     "ServiceTypeCheckForDuplicateMsg": (restaurantId, customerId, customerMsg) => `${supabaseUrl}/rest/v1/chat_logs?restaurant_id=eq.${restaurantId}&customer_id=eq.${customerId}&message=eq.${customerMsg}&select=*, customers!customer_id(*)`,
     "ServiceTypeGetCustomerBookings": (restaurantId, customerId) => `${supabaseUrl}/rest/v1/bookings?select=*,restaurants!restaurant_id(*),customers!customer_id(*),tables!table_id(*)&restaurant_id=eq.${restaurantId}&customer_id=eq.${customerId}&start_date_time=gte.${todayISOString}`,
+    "ServiceTypeSendNotification": "https://exp.host/--/api/v2/push/send",
+    "ServiceTypeGetRestaurantStaff": (restaurantId) => `${supabaseUrl}/rest/v1/staff_users?select=*&restaurant_id=eq.${restaurantId}`,
 }
 
 export default ServiceType;

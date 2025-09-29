@@ -11,6 +11,7 @@ app.use(bodyParser.json());
 
 const PORT = process.env.PORT || 3000;
 let prevMsg = "";
+let staffTokenList = [];
 
 // 1. Webhook verification (Meta calls this once)
 app.get("/webhook", (req, res) => {
@@ -45,7 +46,8 @@ app.post("/webhook", async (req, res) => {
 
     console.log(`Received message from ${name} ${from}: ${text}`);
 
-    try {      
+    try {
+      // Start Processing AI Rsp
       const { data, error } = await Service().performServiceRequest(ServiceType.ServiceTypeGetCustomerId, { name: name, from: from });
 
       if (!error) {
@@ -57,6 +59,15 @@ app.post("/webhook", async (req, res) => {
         };
 
         const msgIdCheckingRsp = await Service().performServiceRequest(ServiceType.ServiceTypeCheckForExistingWhatsAppMsgId, msgIdCheckingReq);
+
+        const staffRsp = await Service().performServiceRequest(ServiceType.ServiceTypeGetRestaurantStaff);
+    
+        if (!staffRsp.isReqSuccessful) {
+          console.error("Failed to obtain Restaurant's Staff List from DB!");
+        } else {
+          console.error("Obtained Restaurant's Staff List from DB!");
+          staffTokenList = staffRsp.staffTokenList;
+        }
 
         if (!msgIdCheckingRsp.isExisting) {
           const chatLogsTableBody = {
@@ -72,6 +83,22 @@ app.post("/webhook", async (req, res) => {
   
           if (!saveChatError) {
             console.log("Saved chat log successfully!");
+
+            if (staffTokenList.length > 0) {
+              // Send Notification to Mobile App
+              const req = {
+                tokens: staffTokenList,
+                title: name,
+                body: text,
+                data: { 
+                  "foo": "bar", 
+                  "customerId": data.customerId,
+                  "action": "openChat"
+                }
+              };
+              
+              const rsp = await Service().performServiceRequest(ServiceType.ServiceTypeSendNotification, req);
+            }
             
             // 3. Response with AI after inactivity for 7 seconds
             const aiRequest = {

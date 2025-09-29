@@ -5,7 +5,6 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import ServiceType from "./Enums.js";
 
 export default function Service() {
-    const supabaseUrl = process.env.SUPABASE_URL;
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;  
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
     const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash-lite' });
@@ -28,6 +27,10 @@ export default function Service() {
                 return await doGetBooking(request);
             case ServiceType.ServiceTypeCheckForExistingWhatsAppMsgId:
               return await doCheckForExistingWhatsAppMsgId(request);
+            case ServiceType.ServiceTypeSendNotification:
+              return await doSendPushNotification(request);
+            case ServiceType.ServiceTypeGetRestaurantStaff: 
+              return await doGetRestaurantStaff();
     
           default:
             throw new Error("Unknown service type");
@@ -842,33 +845,99 @@ export default function Service() {
           return { isReqSuccessful: false };
         } else {
           const data = await customerBookingsRsp.json();
-            console.log("doGetCustomerBookings fetched booking:", data);
+          console.log("doGetCustomerBookings fetched booking:", data);
     
-            const customerBookings = data.map((item) => {
-              const booking = {
-                bookingId: item.id,
-                location: item.restaurants.name,
-                title: item.title,
-                pax: item.pax,
-                bookingUnit: item.tables ? item.tables.table_number : null,
-                type: item.type,
-                startDateTime: new Date(item.start_date_time),
-                endDateTime: new Date(item.end_date_time),
-                customerNm: item.customers.name,
-                customerContact: item.customers.phone,
-                bookingStatus: item.status,
-                notes: item.notes ?? "N/A",
-              };
-    
-              return booking;
-            });
-    
-            return { customerBookings: customerBookings, isReqSuccessful: true };
+          const customerBookings = data.map((item) => {
+            const booking = {
+              bookingId: item.id,
+              location: item.restaurants.name,
+              title: item.title,
+              pax: item.pax,
+              bookingUnit: item.tables ? item.tables.table_number : null,
+              type: item.type,
+              startDateTime: new Date(item.start_date_time),
+              endDateTime: new Date(item.end_date_time),
+              customerNm: item.customers.name,
+              customerContact: item.customers.phone,
+              bookingStatus: item.status,
+              notes: item.notes ?? "N/A",
+            };
+  
+            return booking;
+          });
+  
+          return { customerBookings: customerBookings, isReqSuccessful: true };
         }
       } catch (error) {
         console.log("doGetCustomerBookings error: ", error.message);
         return { isReqSuccessful: false };
       }
+    }
+
+    const doSendPushNotification = async (reqModel) => {
+      try {
+        const title = reqModel.title;
+        const body = reqModel.body;
+        const tokens = Array.isArray(reqModel.tokens) ? reqModel.tokens : [reqModel.tokens];
+
+        const messages = tokens.map((token) => ({
+          to: token,
+          sound: "default",
+          title,
+          body,
+          data: reqModel.data,
+          priority: "high",
+          channelId: "default",
+        }));
+
+        const rsp = await fetch(ServiceType.ServiceTypeSendNotification, {
+          method: "POST",
+          headers: {
+            "Accept": "application/json",
+            "Accept-encoding": "gzip, deflate",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(messages),
+        });
+
+        const data = await rsp.json();
+        console.log(data);
+      } catch (error) {
+        console.error("doSendPushNotification :: Failed to send notification: " + error);
+      }
+    }
+
+    const doGetRestaurantStaff = async () => {
+      const restaurantId = process.env.RESTAURANT_ID;
+      let staffTokenList = new Map;
+      let isReqSuccessful = null;
+
+      try {
+        const rsp = await fetch(ServiceType.ServiceTypeGetRestaurantStaff(restaurantId), {
+          headers: {
+            apikey: supabaseKey,
+            Authorization: `Bearer ${supabaseKey}`,
+          },
+        });
+
+        if (!rsp.ok) {
+          console.error("doGetRestaurantStaff :: Failed to get restaurant staff: " + rsp.status);
+          isReqSuccessful = false;
+        } else {
+          const data = await rsp.json();
+
+          staffTokenList = data.map((item) => item.fcm_token);
+
+          console.log("doGetRestaurantStaff fetched staff:", staffTokenList);
+
+          isReqSuccessful = true;
+        }
+      } catch (error) {
+        console.error("doGetRestaurantStaff :: Failed to get Restaurant Staff: " + error);
+        isReqSuccessful = false;
+      }
+
+      return { staffTokenList: staffTokenList, isReqSuccessful: isReqSuccessful };
     }
 
     return {
