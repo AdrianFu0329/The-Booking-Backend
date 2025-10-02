@@ -131,7 +131,7 @@ app.post("/webhook", async (req, res) => {
               const req = {
                 tokens: staffTokenList,
                 title: name,
-                body: text,
+                body: (msg.type === "image") ? "Image" : text,
                 data: { 
                   "foo": "bar", 
                   "customerId": data.customerId,
