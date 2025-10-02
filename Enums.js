@@ -25,6 +25,8 @@ const ServiceType = {
     "ServiceTypeGetCustomerBookings": (restaurantId, customerId) => `${supabaseUrl}/rest/v1/bookings?select=*,restaurants!restaurant_id(*),customers!customer_id(*),tables!table_id(*)&restaurant_id=eq.${restaurantId}&customer_id=eq.${customerId}&start_date_time=gte.${todayISOString}`,
     "ServiceTypeSendNotification": "https://exp.host/--/api/v2/push/send",
     "ServiceTypeGetRestaurantStaff": (restaurantId) => `${supabaseUrl}/rest/v1/staff_users?select=*&restaurant_id=eq.${restaurantId}`,
+    "ServiceTypeDownloadMedia": (mediaId) => `https://graph.facebook.com/v21.0/${mediaId}`,
+    "ServiceTypeUploadImg": "ServiceTypeUploadImg",
 }
 
 export default ServiceType;

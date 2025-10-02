@@ -3,11 +3,18 @@ dotenv.config();
 
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import ServiceType from "./Enums.js";
+import { createClient } from "@supabase/supabase-js";
+import req from "express/lib/request.js";
 
 export default function Service() {
+    const supabaseUrl = process.env.SUPABASE_URL;
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;  
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
     const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash-lite' });
+    const supabase = createClient(
+      supabaseUrl,
+      supabaseKey
+    )
 
     const performServiceRequest = async (serviceType, request) => {
         switch (serviceType) {
@@ -31,6 +38,10 @@ export default function Service() {
               return await doSendPushNotification(request);
             case ServiceType.ServiceTypeGetRestaurantStaff: 
               return await doGetRestaurantStaff();
+            case ServiceType.ServiceTypeDownloadMedia:
+              return await downloadMediaFromWhatsApp(request);
+            case ServiceType.ServiceTypeUploadImg:
+              return await doUploadImageToDB(request);
     
           default:
             throw new Error("Unknown service type");
@@ -244,6 +255,8 @@ export default function Service() {
             5. Return null for date and time fields as a default value if none is provided by the customer.
             6. If the customer asks to list down their bookings, just list down the start and end date and time, the pax, and notes of their bookings, omit other details.
             7. Never reveal any IDs to the customer.
+            8. If the customer sends an irrelevant text or image, just kindly redirect them back to your main directive.
+              - However, if the customer sends a relevant image to restaurant reservations, reply them accordingly.
 
             Booking Placement Instructions:
             1. Assign a table_id from Restaurant Tables that:
@@ -276,17 +289,25 @@ export default function Service() {
             Conversation:
             "${reqModel.prompt}"
           `;
+
+          let promptParts = [];
+
+          if (reqModel.prompt) {
+            promptParts.push({ text: textPrompt });
+          }
       
           if (reqModel.promptImg) {
-            const imagePart = { inlineData: reqModel.promptImg };
-            prompt = [textPrompt ?? null, imagePart ?? null];
-          } else {
-            prompt = textPrompt ?? null;
+            promptParts.push({ 
+              inlineData: { 
+                mimeType: reqModel.promptImg.mimeType, 
+                data: reqModel.promptImg.data 
+              } 
+            });
           }
       
           if (prompt !== null) {
             const result = await model.generateContent({
-              contents: [{ parts: [{ text: prompt }] }],
+              contents: [{ parts: promptParts }],
               systemInstruction: {
                 role: "system",
                 parts: [
@@ -938,6 +959,83 @@ export default function Service() {
       }
 
       return { staffTokenList: staffTokenList, isReqSuccessful: isReqSuccessful };
+    }
+
+    const downloadMediaFromWhatsApp = async (reqModel) => {
+      let isReqSuccessful = false;
+      let error = null;
+      let imgBuffer = null;
+
+      try {
+        console.log("downloadMediaFromWhatsApp STARTED");
+
+        const mediaRsp = await fetch(ServiceType.ServiceTypeDownloadMedia(reqModel.mediaId), {
+          headers: {
+            Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`
+          }
+        });
+
+        if (!mediaRsp.ok) {
+          const errorText = await mediaRsp.text();
+          console.error(
+            `downloadMediaFromWhatsApp :: Failed to fetch media metadata: ${mediaRsp.status} ${mediaRsp.statusText} - ${errorText}`
+          );
+          error = errorText
+        }
+
+        const mediaData = await mediaRsp.json();
+        if (!mediaData.url) {
+          console.error("downloadMediaFromWhatsApp :: No URL in WhatsApp media response");
+          error = "No URL in WhatsApp media response";
+        } else {
+          console.log("Got WhatsApp media URL:", mediaData.url);
+
+          const fileResp = await fetch(mediaData.url, {
+            headers: {
+              Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
+            },
+          });
+
+          const buffer = await fileResp.arrayBuffer();
+
+          isReqSuccessful = true;
+          imgBuffer = Buffer.from(buffer);
+        }
+      } catch (error) {
+        console.error("downloadMediaFromWhatsApp :: Failed to download media: " + error);
+        error = error;
+      }
+
+      console.log("downloadMediaFromWhatsApp ENDED");
+      return { isReqSuccessful: isReqSuccessful, error: error, buffer: imgBuffer };
+    }
+
+    const doUploadImageToDB = async (reqModel) => {
+      let isReqSuccessful = false;
+      let error = null;
+
+      try {
+        console.log("doUploadImageToDB STARTED");
+
+        const { data, error } = await supabase.storage
+        .from("chat-images")
+        .upload(reqModel.filePath, Buffer.from(reqModel.buffer), {
+          contentType: reqModel.mimeType,
+          upsert: false,
+        });
+    
+        if (error) {
+          error = error;
+        } else {
+          console.log("doUploadImageToDB :: Image saved successfully to DB");
+          isReqSuccessful = true;
+        }
+      } catch (error) {
+        console.error("doUploadImageToDB :: Failed to upload image to DB: " + error);
+      }
+
+      console.log("doUploadImageToDB ENDED");
+      return { isReqSuccessful: isReqSuccessful, error: error };
     }
 
     return {

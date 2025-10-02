@@ -37,14 +37,34 @@ app.post("/webhook", async (req, res) => {
   const messages = changes?.value?.messages;
   const contacts = changes?.value?.contacts;
 
-  if (messages && prevMsg !== messages[0].text.body) {
+  let text;
+  let imageId;
+  let mimeType;
+  let imageBuffer;
+
+  if (messages) {
     const msg = messages[0];
     const from = msg.from; // customer’s number
-    const text = msg.text?.body; // message text
     const name = contacts?.[0]?.profile?.name; // customer's WhatsApp account Name
     const whatsappMsgId = msg.id;
 
-    console.log(`Received message from ${name} ${from}: ${text}`);
+    if (msg.type === "text") {
+      text = msg.text?.body;
+      console.log(`Received message from ${name} ${from}: ${text}`);
+    } else if (msg.type === "image") {
+      imageId = msg.image.id;
+      mimeType = msg.image.mime_type;
+  
+      const request = {
+        mediaId: imageId,
+      }
+  
+      const whatsappImgRsp = await Service().performServiceRequest(ServiceType.ServiceTypeDownloadMedia, request);
+
+      imageBuffer = whatsappImgRsp.buffer;
+      console.log(`Received image message from ${name} ${from}: ${imageBuffer}`);
+    }
+    
 
     try {
       // Start Processing AI Rsp
@@ -70,15 +90,37 @@ app.post("/webhook", async (req, res) => {
         }
 
         if (!msgIdCheckingRsp.isExisting) {
+          // 2. Insert chat log or image linked to customer
+          let filePath;
+          if (msg.type === "image") {
+            const fileExt = mimeType.split("/")[1] || "jpg";
+            const timestamp = new Date().toISOString().replace(/:/g, "-");
+
+            filePath = `${data.customerId}/${timestamp}_${data.customerId}.${fileExt}`;
+
+            const uploadImgReq = {
+              mimeType: mimeType,
+              filePath: filePath,
+              buffer: imageBuffer,
+            }
+
+            const uploadImgRsp = await Service().performServiceRequest(ServiceType.ServiceTypeUploadImg, uploadImgReq);
+
+            if (!uploadImgRsp.isReqSuccessful) {
+              console.error("Failed to upload whatsapp image to DB:", uploadImgRsp.error);
+              res.sendStatus(500);
+              return;
+            }
+          }
+
           const chatLogsTableBody = {
             restaurant_id: process.env.RESTAURANT_ID,
             customer_id: data.customerId,
-            message: text,
+            message: (msg.type === "image") ? `IMG - ${filePath}`: text,
             sender: 'customer',
             whatsapp_msg_id: whatsappMsgId,
           }
-    
-          // 2. Insert chat log linked to customer
+
           const { saveChatStatus, error: saveChatError } = await Service().performServiceRequest(ServiceType.ServiceTypeSendMessage, chatLogsTableBody);
   
           if (!saveChatError) {
@@ -105,6 +147,10 @@ app.post("/webhook", async (req, res) => {
               customerId: data.customerId,
               customerNm: name,
               prompt: text,
+              promptImg: {
+                mimeType: mimeType,
+                data: imageBuffer.toString("base64"),
+              }
             };
   
             const aiRsp = await Service().performServiceRequest(ServiceType.ServiceTypeAI, aiRequest);
