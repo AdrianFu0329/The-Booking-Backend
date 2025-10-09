@@ -260,6 +260,7 @@ export default function Service() {
             7. Never reveal any IDs to the customer.
             8. If the customer sends an irrelevant text or image, just kindly redirect them back to your main directive.
               - However, if the customer sends a relevant image to restaurant reservations, reply them accordingly.
+            9. Use the restaurant's name in your greetings and confirmation messages
 
             Booking Placement Instructions:
             1. Assign Table
