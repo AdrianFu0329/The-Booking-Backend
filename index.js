@@ -143,14 +143,16 @@ app.post("/webhook", async (req, res) => {
             }
             
             // 3. Response with AI after inactivity for 7 seconds
+            const imgPrompt = imageBuffer ? {
+              mimeType: mimeType,
+              data: imageBuffer.toString("base64"),
+            } : null;
+
             const aiRequest = {
               customerId: data.customerId,
               customerNm: name,
               prompt: text,
-              promptImg: {
-                mimeType: mimeType,
-                data: imageBuffer.toString("base64"),
-              }
+              promptImg: imgPrompt,
             };
   
             const aiRsp = await Service().performServiceRequest(ServiceType.ServiceTypeAI, aiRequest);
