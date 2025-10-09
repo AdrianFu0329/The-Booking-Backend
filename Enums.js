@@ -27,6 +27,7 @@ const ServiceType = {
     "ServiceTypeGetRestaurantStaff": (restaurantId) => `${supabaseUrl}/rest/v1/staff_users?select=*&restaurant_id=eq.${restaurantId}`,
     "ServiceTypeDownloadMedia": (mediaId) => `https://graph.facebook.com/v21.0/${mediaId}`,
     "ServiceTypeUploadImg": "ServiceTypeUploadImg",
+    "ServiceTypeDoCheckMsgLimit": "ServiceTypeDoCheckMsgLimit",
 }
 
 export default ServiceType;

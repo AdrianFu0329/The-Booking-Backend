@@ -12,6 +12,7 @@ app.use(bodyParser.json());
 const PORT = process.env.PORT || 3000;
 let prevMsg = "";
 let staffTokenList = [];
+let userMessageCounts = new Map();
 
 // 1. Webhook verification (Meta calls this once)
 app.get("/webhook", (req, res) => {
@@ -64,13 +65,17 @@ app.post("/webhook", async (req, res) => {
       imageBuffer = whatsappImgRsp.buffer;
       console.log(`Received image message from ${name} ${from}: ${imageBuffer}`);
     }
-    
 
     try {
       // Start Processing AI Rsp
       const { data, error } = await Service().performServiceRequest(ServiceType.ServiceTypeGetCustomerId, { name: name, from: from });
 
       if (!error) {
+        if (await Service().performServiceRequest(ServiceType.ServiceTypeDoCheckMsgLimit, { customerId: data.customerId, userMessageCounts: userMessageCounts })) {
+          console.log(`Rate limited: User ${data.customerId} exceeded 3 messages/min`);
+          return res.sendStatus(200);
+        }
+
         const msgIdCheckingReq = {
           restaurantId: process.env.RESTAURANT_ID,
           customerId: data.customerId, 

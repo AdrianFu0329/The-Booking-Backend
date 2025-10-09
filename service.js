@@ -42,6 +42,8 @@ export default function Service() {
               return await downloadMediaFromWhatsApp(request);
             case ServiceType.ServiceTypeUploadImg:
               return await doUploadImageToDB(request);
+            case ServiceType.ServiceTypeDoCheckMsgLimit:
+              return await checkIsRateLimited(request);
     
           default:
             throw new Error("Unknown service type");
@@ -1037,6 +1039,31 @@ export default function Service() {
 
       console.log("doUploadImageToDB ENDED");
       return { isReqSuccessful: isReqSuccessful, error: error };
+    }
+
+    const checkIsRateLimited = async (reqModel) => {
+      const MAX_MESSAGES = 3;
+      const WINDOW_MS = 60000;
+      const customerId = reqModel.customerId;
+      const userMessageCounts = reqModel.userMessageCounts;
+      const now = Date.now();
+      
+      if (!userMessageCounts.has(customerId)) {
+        userMessageCounts.set(customerId, []);
+      }
+      
+      const timestamps = userMessageCounts.get(customerId);
+      
+      // Remove old timestamps outside window
+      const validTimestamps = timestamps.filter(ts => now - ts < WINDOW_MS);
+      userMessageCounts.set(customerId, validTimestamps);
+      
+      if (validTimestamps.length >= MAX_MESSAGES) {
+        return true; // Rate limited
+      }
+      
+      validTimestamps.push(now);
+      return false;
     }
 
     return {
