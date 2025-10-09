@@ -1043,7 +1043,7 @@ export default function Service() {
     }
 
     const checkIsRateLimited = async (reqModel) => {
-      const MAX_MESSAGES = 3;
+      const MAX_MESSAGES = 6;
       const WINDOW_MS = 60000;
       const customerId = reqModel.customerId;
       const userMessageCounts = reqModel.userMessageCounts;
