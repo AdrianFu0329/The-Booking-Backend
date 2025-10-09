@@ -409,7 +409,7 @@ export default function Service() {
             
                 // Write booking to DB once status is confirmed.
                 if (
-                    parsedTxt.action === "confirmed_booking" 
+                    parsedTxt.action === "confirm_booking" 
                     && booking.customerId !== null
                     && booking.bookingUnit !== null
                     && booking.title !== null
