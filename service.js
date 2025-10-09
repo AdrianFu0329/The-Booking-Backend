@@ -229,6 +229,7 @@ export default function Service() {
           
           const textPrompt = `
             Today's or Tonight's or Now's date: ${new Date().toISOString()}
+            Use the date in your responses if the customer requests for Today's, Tonight's, Now's date, or other relevant dates.
             Customer name: ${reqModel.customerNm}
             
             Customer Chat History (for context): 
