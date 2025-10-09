@@ -262,12 +262,13 @@ export default function Service() {
               - However, if the customer sends a relevant image to restaurant reservations, reply them accordingly.
 
             Booking Placement Instructions:
-            1. Assign a table_id from Restaurant Tables that:
-              - Matches or is a table that can accomodate the provided pax (capacity).
-              - The currently reserved tables' start_date_time is not reserved at the requested time. (Check both date & time)
-              - Always return a valid 'table_id' from "Restaurant Tables". 
-              - Do not return placeholders like "N/A".
-              - If a table is not available, suggest other tables or other reservation times
+            1. Assign Table
+              - If available tables found:
+                - Select the table with the smallest capacity that fits the party size (optimize space)
+                - Return the actual table_id from Restaurant Tables
+              - If NO available tables found:
+                - Do NOT return "N/A" or placeholder
+                - Instead, respond with alternative suggestions 
             2. Once the customer confirms the booking details, set the action to "confirm_booking" and include the chosen table_id.
             3. Please inform the customer that the maximum reservation time is ${process.env.MAX_RESERVATION_TIME_HR} hours.
             4. Don't ask the customer about the title.
