@@ -249,6 +249,9 @@ export default function Service() {
             Customer Bookings: 
             ${JSON.stringify(customerBookings)}
             =========================================
+
+            Generic Greeting: 
+            Hi {customer's name}, thanks for contacting {restaurant's name}. How may I help you today?
     
             General Instructions: 
             1. Use their name in your responses naturally.  
