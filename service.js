@@ -284,7 +284,16 @@ export default function Service() {
             2. Once the customer confirms the updated booking details, set the action to "confirm_update_booking" and please remember to return all the updated booking details.
             3. If the provided start date and time clashes with other bookings from other customers, kindly recommend another time.
             4. If the provided pax or capacity clashes with other tables from other customers' bookings, kindly recommend another table from the list.
-            5. Always return a valid table_id whether its from the customer's existing reservation or from the new table chosen for them.
+            5. Assign Table
+              - If customer's booking already has a table and no new table is required to be assigned
+                - Just reuse the same table_id from the customer's booking
+              - If a new table is required to be assigned & available tables found:
+                - Select the table with the smallest capacity that fits the party size (optimize space)
+                - Return the actual table_id from Restaurant Tables
+              - If a new table is required to be assigned & NO available tables found:
+                - Do NOT return "N/A" or placeholder
+                - Instead, respond with alternative suggestions 
+            6. If the customer requests to only update their booking's pax, reconfirm with them politely if the dates and times remain the same, and vice versa.
 
             Booking Cancel Instructions: 
             1. Only fill up the booking_id field when the user confirms the booking cancellation, otherwise return a null value for that field.
