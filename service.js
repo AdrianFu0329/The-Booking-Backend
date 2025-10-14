@@ -373,6 +373,19 @@ export default function Service() {
 
             Generic Greeting: 
             Hi {customer's name}, thanks for contacting {restaurant's name}. How may I help you today?
+
+            Date Interpretation Rules:
+            1. If the customer provides only a day and month (e.g. "20th of October") without specifying a year:
+              - Always assume the current year.
+              - Only move to the next year if that date has already passed in the current year.
+              - Example: if today is 13/10/2025 and the customer says "20th of October", interpret as 20/10/2025.
+              - Example: if today is 25/12/2025 and the customer says "20th of October", interpret as 20/10/2026.
+
+            2. If the customer mentions "next month", "next week", or "tomorrow":
+              - Calculate it relative to the provided "Current Date & Time".
+
+            3. If the customer says "this Friday", "this weekend", or similar:
+              - Use the provided "Current Date & Time" to find the nearest matching date within the same week.
     
             General Instructions: 
             1. Use their name in your responses naturally.  
@@ -591,6 +604,9 @@ export default function Service() {
                     console.error("doOnlineAIRequest :: Queue not added successfully to DB.");
                     return { isReqSuccessful: false };
                   } else {
+                    const queueId = addQueueRsp.queueId;
+                    rspModel.rspMsg = rspModel.rspMsg + `\n\nYour Queue ID for Reference: ${queueId}`;
+
                     return rspModel;
                   }
                 }
@@ -617,6 +633,9 @@ export default function Service() {
                     console.error("doOnlineAIRequest :: Booking not added successfully to DB.");
                     return { isReqSuccessful: false };
                   } else {
+                    const bookingId = addBookingRsp.bookingId;
+                    rspModel.rspMsg = rspModel.rspMsg + `\n\nYour Booking ID for Reference: ${bookingId}`;
+
                     return rspModel;
                   }
                 } else if (
