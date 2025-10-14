@@ -12,6 +12,7 @@ const todayISOString = today.toISOString();
 const ServiceType = {
     "ServiceTypeGetTableList": (restaurantId) => `${supabaseUrl}/rest/v1/tables?restaurant_id=eq.${restaurantId}`,
     "ServiceTypeCreateBooking": `${supabaseUrl}/rest/v1/bookings`,
+    "ServiceTypeGetCreateTableQueue": (isGet) => `${supabaseUrl}/rest/v1/table_queue?select=*${isGet ? '&status=eq.queued' : ''}`,
     "ServiceTypeAI": 'ServiceTypeAI',
     "ServiceTypeGetBookingAvailabilities": (restaurantId) => `${supabaseUrl}/rest/v1/bookings?select=*,tables!table_id(*)&restaurant_id=eq.${restaurantId}&status=eq.confirmed`,
     "ServiceTypeGetCustomerId": `${supabaseUrl}/rest/v1/customers`,

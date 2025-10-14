@@ -45,6 +45,10 @@ app.post("/webhook", async (req, res) => {
 
   if (messages) {
     const msg = messages[0];
+    const currentTime = new Date(msg.timestamp * 1000).toLocaleString("en-GB", {
+      timeZone: "Asia/Kuala_Lumpur",
+      hour12: false,
+    });;
     const from = msg.from; // customer’s number
     const name = contacts?.[0]?.profile?.name; // customer's WhatsApp account Name
     const whatsappMsgId = msg.id;
@@ -158,6 +162,7 @@ app.post("/webhook", async (req, res) => {
               customerNm: name,
               prompt: text,
               promptImg: imgPrompt,
+              currentTime: currentTime,
             };
   
             const aiRsp = await Service().performServiceRequest(ServiceType.ServiceTypeAI, aiRequest);

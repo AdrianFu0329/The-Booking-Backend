@@ -148,6 +148,101 @@ export default function Service() {
         return rspModel;
     }
 
+    const doAddQueue = async (reqModel) => {    
+      let rspModel = {};
+  
+      try {
+        console.log("doAddQueue :: write to table queue STARTED");
+  
+        const queueItem = reqModel.queue;
+  
+        if (queueItem) {
+          const jsonItem = {
+              customer_id: queueItem.customerId,
+              customer_name: queueItem.customerNm,
+              pax: Number(queueItem.pax),
+              status: queueItem.bookingStatus,
+          };
+
+          console.log("doAddQueue :: jsonItem =>", jsonItem);
+                  
+          const rsp = await fetch(ServiceType.ServiceTypeGetCreateTableQueue(false), {
+            method: "POST",
+            headers: {
+              apikey: supabaseKey,
+              Authorization: `Bearer ${supabaseKey}`,
+              "Content-Type": "application/json",
+              Prefer: "return=representation",
+            },
+            body: JSON.stringify(jsonItem),
+          });
+  
+          if (!rsp.ok) {
+              console.error("doAddQueue :: Failed to add table queue: ", rsp);
+              return { isReqSuccessful: false };
+          } else {
+            const data = await rsp.json();
+            console.log(
+              "doAddQueue :: Success Response: Queue added => ",
+              data
+            );
+  
+            return { isReqSuccessful: true, queueId: data[0].id };
+          }
+        }
+      } catch (err) {
+        console.error("doAddQueue :: Error while adding table queue: " + err);
+        return { isReqSuccessful: false };
+      }
+  
+      return rspModel;
+    }
+
+    const doGetQueue = async () => {
+      let queueList = null;
+
+        try {
+          console.log("doGetQueue STARTED");
+    
+          const rsp = await fetch(ServiceType.ServiceTypeGetCreateTableQueue(true), {
+            headers: {
+              apikey: supabaseKey,
+                Authorization: `Bearer ${supabaseKey}`,
+            },
+          });
+    
+          if (!rsp.ok) {
+            console.error("doGetQueue :: Failed to get table queue list: " + rsp.status);
+            return { isReqSuccessful: false };
+            } else {
+                const data = await rsp.json();
+                // console.log(JSON.stringify(data));
+                
+                queueList = data.map((item) => {
+                    const queue = {
+                        queueId: item.id,
+                        createdAt: item.created_at,
+                        customerNm: item.customer_name,
+                        pax: item.pax,
+                        status: item.status,
+                    };
+
+                    return queue;
+                });
+
+                queueList.sort((a, b) =>
+                  new Date(a.createdAt) - new Date(b.createdAt)
+                )
+                
+                console.log("doGetQueue ENDED");
+                return { rsp: queueList, isReqSuccessful: true };
+            }
+        } catch (err) {
+          console.log("doGetQueue :: " + err);
+          return { isReqSuccessful: false };
+        }
+    }
+
     const doOnlineAIRequest = async (request) => {
         console.log("doOnlineAIRequest :: online AI request STARTED");
       
@@ -159,6 +254,7 @@ export default function Service() {
           let tableAvailabilityMap = new Map();
           let customerPrevChatList = [];
           let customerBookings = [];
+          let tableQueueCount = 0;
     
           // Get Current Restaurant's tables
           const bookingReqModel = {
@@ -216,21 +312,33 @@ export default function Service() {
           } else {
             customerBookings = getCustomerBookingsRsp.customerBookings;
           }
+
+          const getTableQueueListRsp = await doGetQueue();
+
+          if (!getTableQueueListRsp.isReqSuccessful) {
+
+          } else {
+            tableQueueCount = getTableQueueListRsp.rsp.length;
+          }
     
           const tableListForAI = Array.from(tableIdMap.entries()).map(([desc, id]) => ({
-            id,
+            table_id: id,
             description: desc,
           }));
-          
-          const availabilityForAI = Array.from(tableAvailabilityMap.entries()).map(([tableId, status]) => ({
-            status,
-            tableId,
-          }));
-    
+
+          const groupedAvailability = tableAvailabilityMap.reduce((acc, item) => {
+            if (!acc[item.table_id]) acc[item.table_id] = [];
+            acc[item.table_id].push({
+              start_date_time: convertUTCtoMYT(item.start_date_time),
+              end_date_time: convertUTCtoMYT(item.end_date_time)
+            });
+            return acc;
+          }, {});       
+                    
           let prompt;
           
           const textPrompt = `
-            Today's or Tonight's or Now's date: ${new Date().toISOString()}
+            Current Date & Time (Malaysian Time): ${request.currentTime}
             Use the date in your responses if the customer requests for Today's, Tonight's, Now's date, or other relevant dates.
             Customer name: ${reqModel.customerNm}
             
@@ -238,24 +346,37 @@ export default function Service() {
             ${JSON.stringify(customerPrevChatList)}
             =========================================
     
-            Restaurant Tables: 
+            Restaurant Tables (You must always use the 'table_id' field when referring to a table. The "description" field is for context only and must not be used as identifiers): 
             ${JSON.stringify(tableListForAI)}
             =========================================
     
-            Currently Reserved Tables: 
-            ${JSON.stringify(availabilityForAI)}
+            Currently Reserved Tables (sorted by date and time — all in Malaysia Time):
+            ${JSON.stringify(Object.fromEntries(
+              Object.entries(groupedAvailability).map(([tableId, slots]) => [
+                tableId,
+                slots.sort((a, b) =>
+                  new Date(a.start_date_time) - new Date(b.start_date_time)
+                )
+              ])
+            ), null, 2)}
             =========================================
+            ⚠️ Important:
+            Each "start_date_time" and "end_date_time" are in Malaysia Time (UTC+8).
+            Do NOT assign a table to a time range that overlaps with any existing reserved period.
+            If all tables are occupied at the requested time, find the next available time slot after the latest "end_date_time".
 
             Customer Bookings: 
             ${JSON.stringify(customerBookings)}
             =========================================
+
+            Number of customers ahead: ${tableQueueCount}
 
             Generic Greeting: 
             Hi {customer's name}, thanks for contacting {restaurant's name}. How may I help you today?
     
             General Instructions: 
             1. Use their name in your responses naturally.  
-            2. Convert all times to Malaysian time from UTC.
+            2. Always convert all times to Malaysian time from UTC.
             3. Don't mention anything technical to the customer (date formats, timezones, IDs).
             4. Keep messages short and concise.
             5. Return null for date and time fields as a default value if none is provided by the customer.
@@ -263,7 +384,32 @@ export default function Service() {
             7. Never reveal any IDs to the customer.
             8. If the customer sends an irrelevant text or image, just kindly redirect them back to your main directive.
               - However, if the customer sends a relevant image to restaurant reservations, reply them accordingly.
-            9. Use the restaurant's name in your greetings and confirmation messages
+            9. Use the restaurant's name in your greetings and confirmation messages.
+            10. Always be polite and professional. 
+            11. Ask for start and end date and time of their reservation, number of guests, and special requests for booking requests. 
+            12. If the customer provides a duration, calculate the end date and time directly.
+            13. You must set all date time formats to be dd/MM/yyyy HH:mm. 
+            14. Never answer questions outside restaurant reservations.
+            15. If the customer is asking to queue for a table, follow the "Table Queue Instructions".
+            16. Each entry in “Currently Reserved Tables” contains a 'table_id', 'start_date_time', and 'end_date_time'.
+            17. When finding for table availability:
+              - Compare the requested start time with the time ranges in "Currently Reserved Tables".
+              - If it overlaps, that table is unavailable.
+              - If all tables overlap, use the next available slot (the end time of the earliest finishing reservation for any table) as the new start time.
+
+
+            Table Queue Instructions:
+            1. Set action to "request_confirm_table_queue" after receiving the number of pax from the customer. 
+            2. Then set 'action' = "confirm_table_queue" after the customer has confirmed their number of pax.
+            3. Keep 'special_requests' = "No requests".
+            4. Inform the customer clearly:
+              - How many customers are in front of them in the table queue.
+              - That the restaurant's staff will come to the waiting area to call out your name.
+              - That the maximum meal time is ${process.env.MAX_RESERVATION_TIME_HR} hours.
+            5. Sample Response: 
+              - For requesting confirmation: Hi (customer name), please confirm that you want to be in the queue for a table for (number of pax) pax. There are (number of customers ahead) in front of you. The approximate waiting time is (number of customer's in queue * 5) minutes, please be present by then. Your maximum meal duration is 1.5 hours.
+              - For queue confirmed: Hi (customer name), you are now in the queue for a table for (number of pax) pax. There are (number of customers ahead) in front of you. The approximate waiting time is (number of customer's in queue * 5) minutes, please be present by then. Your maximum meal duration is 1.5 hours. We look forward to serving you at (restaurant's name).
+
 
             Booking Placement Instructions:
             1. Assign Table
@@ -339,12 +485,14 @@ export default function Service() {
                   type: "object",
                   properties: {
                     action: { type: "string", enum: [
+                        "request_confirm_table_queue",
                         "request_update_booking", 
                         "request_cancel_booking", 
                         "request_booking_info", 
                         "confirm_booking", 
                         "confirm_update_booking", 
                         "confirm_cancel_booking", 
+                        "confirm_table_queue",
                         "modify", 
                         "cancel", 
                         "reject", 
@@ -401,7 +549,8 @@ export default function Service() {
                     parsedEndDtTime = parseDateAndTime(parsedTxt.end_date, parsedTxt.end_time).toISOString();
                   }
                 } catch (error) {
-                  // Do Nothing
+                  console.error("Online AI request failed: Date Parsing Failed: ", error);
+                  return { isReqSuccessful: false };
                 }
         
                 const booking = {
@@ -423,9 +572,31 @@ export default function Service() {
                     rspMsg: parsedTxt.message,
                 }
             
-                // Write booking to DB once status is confirmed.
+                // Write queue to DB once status is confirmed.
                 if (
-                    parsedTxt.action === "confirm_booking" 
+                  parsedTxt.action === "confirm_table_queue" 
+                  && booking.customerId !== null
+                  && booking.customerNm !== null
+                  && (booking.pax !== null && booking.pax > 0))
+                {
+                  booking.bookingStatus = "queued";
+
+                  const addQueueReq = {
+                    queue: booking,
+                  }
+
+                  const addQueueRsp = await doAddQueue(addQueueReq);
+
+                  if (!addQueueRsp.isReqSuccessful) {
+                    console.error("doOnlineAIRequest :: Queue not added successfully to DB.");
+                    return { isReqSuccessful: false };
+                  } else {
+                    return rspModel;
+                  }
+                }
+                // Write booking to DB once status is confirmed.
+                else if (
+                    (parsedTxt.action === "confirm_booking")
                     && booking.customerId !== null
                     && booking.bookingUnit !== null
                     && booking.title !== null
@@ -536,10 +707,11 @@ export default function Service() {
             const data = await rsp.json();
             // console.log("doGetTableAvailability fetched table availabilities:", data);
     
-            availabilityMap = new Map(data.map((item) => [
-              `${new Date(item.start_date_time)} - ${new Date(item.end_date_time)}`,
-              item.table_id
-            ]));
+            availabilityMap = data.map(item => ({
+              table_id: item.table_id,
+              start_date_time: item.start_date_time,
+              end_date_time: item.end_date_time
+            }));
     
             console.log("doGetTableAvailability ENDED");
             return { bookingAvailabilityMap: availabilityMap, isReqSuccessful: true };
@@ -1079,6 +1251,12 @@ export default function Service() {
       validTimestamps.push(now);
       return false;
     }
+
+    const convertUTCtoMYT = (utcString) =>
+      new Date(utcString).toLocaleString("en-GB", {
+        timeZone: "Asia/Kuala_Lumpur",
+        hour12: false,
+      });
 
     return {
         performServiceRequest,
