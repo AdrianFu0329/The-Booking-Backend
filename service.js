@@ -158,6 +158,7 @@ export default function Service() {
   
         if (queueItem) {
           const jsonItem = {
+              restaurant_id: process.env.RESTAURANT_ID,
               customer_id: queueItem.customerId,
               customer_name: queueItem.customerNm,
               pax: Number(queueItem.pax),
