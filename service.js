@@ -593,7 +593,7 @@ export default function Service() {
                   && booking.customerNm !== null
                   && (booking.pax !== null && booking.pax > 0))
                 {
-                  booking.bookingStatus = "queued";
+                  booking.bookingStatus = "Queued";
 
                   const addQueueReq = {
                     queue: booking,
