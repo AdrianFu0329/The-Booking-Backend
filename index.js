@@ -4,6 +4,7 @@ import dotenv from "dotenv";
 import axios from "axios";
 import Service from "./service.js";
 import ServiceType from "./Enums.js";
+import ServiceModel from "./ServiceModel.js";
 
 dotenv.config();
 const app = express();
@@ -52,6 +53,7 @@ app.post("/webhook", async (req, res) => {
     const from = msg.from; // customer’s number
     const name = contacts?.[0]?.profile?.name; // customer's WhatsApp account Name
     const whatsappMsgId = msg.id;
+    let isUnsupportedType = false;
 
     if (msg.type === "text") {
       text = msg.text?.body;
@@ -68,6 +70,8 @@ app.post("/webhook", async (req, res) => {
 
       imageBuffer = whatsappImgRsp.buffer;
       console.log(`Received image message from ${name} ${from}: ${imageBuffer}`);
+    } else {
+      isUnsupportedType = true;
     }
 
     try {
@@ -125,7 +129,7 @@ app.post("/webhook", async (req, res) => {
           const chatLogsTableBody = {
             restaurant_id: process.env.RESTAURANT_ID,
             customer_id: data.customerId,
-            message: (msg.type === "image") ? `IMG - ${filePath}`: text,
+            message: isUnsupportedType ? "Unsupported Message...": ((msg.type === "image") ? `IMG - ${filePath}`: text),
             sender: 'customer',
             whatsapp_msg_id: whatsappMsgId,
           }
@@ -135,7 +139,7 @@ app.post("/webhook", async (req, res) => {
           if (!saveChatError) {
             console.log("Saved chat log successfully!");
 
-            if (staffTokenList.length > 0) {
+            if (staffTokenList.length > 0 && !isUnsupportedType) {
               // Send Notification to Mobile App
               const req = {
                 tokens: staffTokenList,
@@ -151,66 +155,68 @@ app.post("/webhook", async (req, res) => {
               const rsp = await Service().performServiceRequest(ServiceType.ServiceTypeSendNotification, req);
             }
             
-            // 3. Response with AI after inactivity for 7 seconds
-            const imgPrompt = imageBuffer ? {
-              mimeType: mimeType,
-              data: imageBuffer.toString("base64"),
-            } : null;
+            if (isUnsupportedType) {
+              const sendMsgReq = {
+                restaurant_id: process.env.RESTAURANT_ID,
+                customer_id: data.customerId,
+                message: "We're so sorry, but we can only process text and image messages at the moment. Please resend your message in a supported format.",
+                sender: 'staff',
+                from: from,
+              };
 
-            const aiRequest = {
-              customerId: data.customerId,
-              customerNm: name,
-              prompt: text,
-              promptImg: imgPrompt,
-              currentTime: currentTime,
-            };
-  
-            const aiRsp = await Service().performServiceRequest(ServiceType.ServiceTypeAI, aiRequest);
-  
-            let aiMsg = '';
-  
-            if (!aiRsp.isReqSuccessful) {
-              console.error("Failed to generate AI response.");
-              aiMsg = "Our service is currently unavailable. Please try again later or wait for our staff to assist you. We apologize for the inconvenience.";
-            } else {
-              aiMsg = aiRsp.rspMsg;
-            }
-  
-            const sendMsgReq = {
-              restaurant_id: process.env.RESTAURANT_ID,
-              customer_id: data.customerId,
-              message: aiMsg,
-              sender: 'staff',
-            };
-  
-            const { saveChatStatus, error: saveChatError } = await Service().performServiceRequest(ServiceType.ServiceTypeSendMessage, sendMsgReq);
-  
-            if (!saveChatStatus) {
-              console.error("Failed to save msg to DB: " + saveChatError);
-              // res.sendStatus(802);
-              return;
-            } else {
-              await axios.post(
-                `https://graph.facebook.com/v17.0/${process.env.PHONE_NUMBER_ID}/messages`,
-                {
-                  messaging_product: "whatsapp",
-                  to: from,
-                  type: "text",
-                  text: { body: aiMsg },
-                },
-                {
-                  headers: {
-                    Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
-                    "Content-Type": "application/json",
-                  },
-                }
-              );
-              console.log("AI response sent to customer:", aiMsg);
-  
-              if (!aiRsp.isReqSuccessful) {
-                // res.sendStatus(801);
+              const sendMsgRsp = await ServiceModel().requestSendMessageService(sendMsgReq);
+
+              if (sendMsgRsp.isReqSuccessful) {
+                console.log("Response sent successfully.");
+                return res.sendStatus(200);
               } else {
+                console.error("Failed to send response:", sendMsgRsp.error);
+                res.sendStatus(500);
+
+                return;
+              }
+            } else {
+              // 3. Response with AI after inactivity for 7 seconds
+              const imgPrompt = imageBuffer ? {
+                mimeType: mimeType,
+                data: imageBuffer.toString("base64"),
+              } : null;
+
+              const aiRequest = {
+                customerId: data.customerId,
+                customerNm: name,
+                prompt: text,
+                promptImg: imgPrompt,
+                currentTime: currentTime,
+              };
+    
+              const aiRsp = await Service().performServiceRequest(ServiceType.ServiceTypeAI, aiRequest);
+    
+              let aiMsg = '';
+    
+              if (!aiRsp.isReqSuccessful) {
+                console.error("Failed to generate AI response.");
+                aiMsg = "Our service is currently unavailable. Please try again later or wait for our staff to assist you. We apologize for the inconvenience.";
+              } else {
+                aiMsg = aiRsp.rspMsg;
+              }
+    
+              const sendMsgReq = {
+                restaurant_id: process.env.RESTAURANT_ID,
+                customer_id: data.customerId,
+                message: aiMsg,
+                sender: 'staff',
+                from: from,
+              };
+    
+              const sendMsgRsp = await ServiceModel().requestSendMessageService(sendMsgReq);
+
+              if (sendMsgRsp.isReqSuccessful) {
+                console.log("AI response sent successfully.");
                 res.sendStatus(200);
+              } else {
+                console.error("Failed to send AI response:", sendMsgRsp.error);
+                res.sendStatus(500);
               }
             }
           } else {
